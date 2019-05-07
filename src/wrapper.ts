@@ -17,6 +17,14 @@ export interface ILvinOptions {
     max_lines?: number;
 }
 
+export interface IParameters {
+    rowOffset?: number;
+    byteOffset?: number;
+    srcFile: string;
+    destFile?: string;
+    injection?: string;
+}
+
 export default class Lvin {
 
     public static path: string = path.join(__dirname, `../bin/lvin${process.platform === 'win32' ? '.exe' : ''}`)
@@ -24,15 +32,15 @@ export default class Lvin {
 
     private _process: ChildProcess | undefined;
 
-    public index(srcFile: string, destFile: string, injection: string, options?: ILvinOptions): Promise<IIndexResult> {
+    public index(params: IParameters, options?: ILvinOptions): Promise<IIndexResult> {
         return new Promise((resolve, reject) => {
             // Check existing process
             if (this._process !== undefined) {
                 return new Error(`Cannot proceed because previous process wasn't finished yet.`);
             }
             // Check files
-            if (!fs.existsSync(srcFile)) {
-                return reject(new Error(`Source file "${srcFile}" doesn't exist.`));
+            if (!fs.existsSync(params.srcFile)) {
+                return reject(new Error(`Source file "${params.srcFile}" doesn't exist.`));
             }
             if (options === undefined) {
                 options = {};
@@ -41,16 +49,31 @@ export default class Lvin {
             Object.keys(options).forEach((key: string) => {
                 args.push(...[`--${key}`, (options as any)[key]]);
             });
-            args.push(srcFile);
-            args.push(injection);
+            if (typeof params.destFile === 'string') {
+                // TODO: check size of output. if 0, do not make -a
+                args.push('-a');
+            }
+            args.push(params.srcFile);
+            if (typeof params.injection === 'string') {
+                args.push(params.injection);
+            } else {
+                args.push('');
+            }
+            if (typeof params.destFile === 'string') {
+                args.push(params.destFile);
+            }
             // Start process
             this._process = spawn(Lvin.path, args, {
-                cwd: path.dirname(srcFile),
+                cwd: path.dirname(params.srcFile),
             });
             this._process.stdout.pipe(process.stdout);
             this._process.once('close', () => {
+                const offset = {
+                    row: params.rowOffset === undefined ? 0 : params.rowOffset,
+                    byte: params.byteOffset === undefined ? 0 : params.byteOffset,
+                };
                 // Read map
-                this._readMeta(srcFile).then((map: IFileMapItem[]) => {
+                this._readMeta(params.srcFile, offset).then((map: IFileMapItem[]) => {
                     resolve({
                         size: 0,
                         map: map,
@@ -67,23 +90,41 @@ export default class Lvin {
         });
     }
 
-    private _readMeta(srcFile: string): Promise<IFileMapItem[]> {
+    private _readMeta(srcFile: string, offset: { row: number, byte: number }): Promise<IFileMapItem[]> {
         return new Promise((resolve, reject) => {
-            const metaFile: string = path.resolve(path.dirname(srcFile), 'lineMetadata.json');
+            const metaFile: string = path.resolve(`${srcFile}.map.json`);
             if (!fs.existsSync(metaFile)) {
                 return reject(new Error(`Cannot find file "${metaFile}" with meta data.`));
+            }
+            if (offset === undefined) {
+                offset = { row: 0, byte: 0 };
+            }
+            if (typeof offset.row !== 'number' || typeof offset.byte !== 'number') {
+                return reject(new Error(`Offset should be defined as { row: number, byte: number } object`));
+            }
+            if (isNaN(offset.row) || isNaN(offset.byte) || !isFinite(offset.byte) || !isFinite(offset.row)) {
+                return reject(new Error(`Offset should be defined as { row: number, byte: number } object. And row and byte shound finite and not NaN.`));
             }
             fs.readFile(metaFile, (error: NodeJS.ErrnoException, content: Buffer) => {
                 if (error) {
                     return reject(error);
                 }
                 try {
-                    const map: IFileMapItem[] = JSON.parse(content.toString('utf8'));
+                    let map: IFileMapItem[] = JSON.parse(content.toString('utf8'));
                     if (!(map instanceof Array)) {
                         return reject(new Error(`Wrong format of meta data. Expected: Array; gotten: ${typeof map}.`));
                     }
                     // Remove meta file
                     fs.unlinkSync(metaFile);
+                    // Apply offset if needed
+                    if (offset.row > 0 || offset.byte > 0) {
+                        map = map.map((item: IFileMapItem) => {
+                            return {
+                                r: [item.r[0] + offset.row, item.r[1] + offset.row],
+                                b: [item.b[0] + offset.byte, item.b[1] + offset.byte],
+                            };
+                        });
+                    }
                     // Done
                     resolve(map);
                 } catch (e) {

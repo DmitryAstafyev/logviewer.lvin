@@ -1,6 +1,6 @@
 {
   "name": "logviewer.lvin",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Tools for logviewer: reads and indexes files",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

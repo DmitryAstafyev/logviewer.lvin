@@ -11,9 +11,11 @@ describe('Lvin tests', () => {
 
     it('Read and index file', (done: Function)=>{
         const inst: Lvin = new Lvin();
-        inst.index( path.resolve(process.cwd(), './spec/logs/small.log'),
-                    path.resolve(process.cwd(), './spec/logs/small.log.indexed'),
-                    'PLUGIN_ID').then((results: IIndexResult) => {
+        inst.index({ 
+            srcFile: path.resolve(process.cwd(), './spec/logs/small.log'),
+            destFile: path.resolve(process.cwd(), './spec/logs/small.log.indexed'),
+            injection: 'PLUGIN_ID',
+        }).then((results: IIndexResult) => {
             // Done
             done();
         }).catch((error: Error) => {
