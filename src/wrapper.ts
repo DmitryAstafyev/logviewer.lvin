@@ -62,6 +62,8 @@ export default class Lvin {
             if (typeof params.destFile === 'string') {
                 args.push(params.destFile);
             }
+            const started: number = Date.now();
+            console.log(`Command "lvin" is started.`);
             // Start process
             this._process = spawn(Lvin.path, args, {
                 cwd: path.dirname(params.srcFile),
@@ -72,6 +74,7 @@ export default class Lvin {
                     row: params.rowOffset === undefined ? 0 : params.rowOffset,
                     byte: params.byteOffset === undefined ? 0 : params.byteOffset,
                 };
+                console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
                 // Read map
                 this._readMeta(params.srcFile, offset).then((map: IFileMapItem[]) => {
                     resolve({
