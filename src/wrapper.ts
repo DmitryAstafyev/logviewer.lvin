@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import { EventEmitter } from 'events';
 import { spawn, ChildProcess } from 'child_process';
 
 export interface IFileMapItem {
@@ -25,7 +26,11 @@ export interface IParameters {
     injection?: string;
 }
 
-export default class Lvin {
+export default class Lvin extends EventEmitter {
+
+    public static Events = {
+        progress: 'progress',
+    };
 
     public static path: string = path.join(__dirname, `../bin/lvin${process.platform === 'win32' ? '.exe' : ''}`)
                                      .replace(/\bnode_modules\.asar\b/, 'node_modules.asar.unpacked');
@@ -68,7 +73,19 @@ export default class Lvin {
             this._process = spawn(Lvin.path, args, {
                 cwd: path.dirname(params.srcFile),
             });
-            this._process.stdout.pipe(process.stdout);
+            this._process.stdout.on('data', (chunk: Buffer | string) => {
+                if (chunk instanceof Buffer) {
+                    chunk = chunk.toString('utf8');
+                }
+                if (typeof chunk !== 'string') {
+                    return;
+                }
+                const bytes: number = parseInt(chunk, 10);
+                if (!isNaN(bytes) && isFinite(bytes)) {
+                    return this.emit(Lvin.Events.progress, bytes);
+                }
+                process.stdout.write(chunk);
+            });
             this._process.once('close', () => {
                 const offset = {
                     row: params.rowOffset === undefined ? 0 : params.rowOffset,
