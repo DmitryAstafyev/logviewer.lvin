@@ -11,6 +11,9 @@ describe('Lvin tests', () => {
 
     it('Read and index file', (done: Function)=>{
         const inst: Lvin = new Lvin();
+        inst.on(Lvin.Events.map, (map) => {
+            console.log(`Map is gotten:`, map);
+        });
         inst.index({ 
             srcFile: path.resolve(process.cwd(), './spec/logs/small.log'),
             destFile: path.resolve(process.cwd(), './spec/logs/small.log.indexed'),

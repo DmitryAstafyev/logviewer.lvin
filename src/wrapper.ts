@@ -30,12 +30,14 @@ export default class Lvin extends EventEmitter {
 
     public static Events = {
         progress: 'progress',
+        map: 'map',
     };
 
     public static path: string = path.join(__dirname, `../bin/lvin${process.platform === 'win32' ? '.exe' : ''}`)
                                      .replace(/\bnode_modules\.asar\b/, 'node_modules.asar.unpacked');
 
     private _process: ChildProcess | undefined;
+    private _stdoutRest: string = '';
 
     public index(params: IParameters, options?: ILvinOptions): Promise<IIndexResult> {
         return new Promise((resolve, reject) => {
@@ -50,7 +52,9 @@ export default class Lvin extends EventEmitter {
             if (options === undefined) {
                 options = {};
             }
-            const args: string[] = [];
+            const args: string[] = [
+                '-t', // to post map into stdout
+            ];
             Object.keys(options).forEach((key: string) => {
                 args.push(...[`--${key}`, (options as any)[key]]);
             });
@@ -80,17 +84,30 @@ export default class Lvin extends EventEmitter {
                 if (typeof chunk !== 'string') {
                     return;
                 }
-                const bytes: number = parseInt(chunk, 10);
-                if (!isNaN(bytes) && isFinite(bytes)) {
-                    return this.emit(Lvin.Events.progress, bytes);
+                chunk = `${this._stdoutRest}${chunk}`;
+                const rest = this._getRest(chunk);
+                this._stdoutRest = rest.rest;
+                chunk = rest.cleared;
+                const mapItems: IFileMapItem[] | undefined = this._getMapSegments(rest.cleared);
+                if (mapItems !== undefined) {
+                    this.emit(Lvin.Events.map, mapItems);
+                } else {
+                    process.stdout.write(chunk);
                 }
-                process.stdout.write(chunk);
             });
             this._process.once('close', () => {
                 const offset = {
                     row: params.rowOffset === undefined ? 0 : params.rowOffset,
                     byte: params.byteOffset === undefined ? 0 : params.byteOffset,
                 };
+                // Check rest part in stdout
+                if (this._stdoutRest.trim() !== '') {
+                    const mapItems: IFileMapItem[] | undefined = this._getMapSegments(this._stdoutRest);
+                    if (mapItems !== undefined) {
+                        this.emit(Lvin.Events.map, mapItems);
+                    }
+                }
+                this._stdoutRest = '';
                 console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
                 // Read map
                 this._readMeta(params.srcFile, offset).then((map: IFileMapItem[]) => {
@@ -152,6 +169,41 @@ export default class Lvin extends EventEmitter {
                 }
             });
         });
+    }
+
+    private _getRest(str: string): { rest: string, cleared: string } {
+        const last = str.length - 1;
+        for (let i = last; i >= 0; i -= 1) {
+            if (str[i] === '\n' && i > 0) {
+                return {
+                    rest: str.substr(i + 1, last),
+                    cleared: str.substr(0, i + 1),
+                };
+            }
+        }
+        return { rest: '', cleared: str };
+    }
+
+    private _getMapSegments(str: string): IFileMapItem[] | undefined {
+        const items: IFileMapItem[] = [];
+        str.split(/[\n\r]/gi).forEach((row: string) => {
+            try {
+                const obj: IFileMapItem = JSON.parse(row);
+                if (typeof obj !== 'object' || obj === null) {
+                    return;
+                }
+                if (!(obj.b instanceof Array) || obj.b.length !== 2) {
+                    return;
+                }
+                if (!(obj.r instanceof Array) || obj.r.length !== 2) {
+                    return;
+                }
+                items.push(obj);
+            } catch (e) {
+                return;
+            }
+        });
+        return items.length > 0 ? items : undefined;
     }
 
 }
