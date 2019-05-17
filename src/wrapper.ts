@@ -13,9 +13,29 @@ export interface IIndexResult {
     map: IFileMapItem[];
 }
 
+export interface IFileToBeMerged {
+    file: string;
+    offset?: number;
+    year?: number;
+}
+
+export interface IMergeResult {
+    size: number;
+    file: string;
+    map: IFileMapItem[];
+    files: IFileToBeMerged[];
+}
+
 export interface ILvinOptions {
     chunk_size?: number;
     max_lines?: number;
+    cwd?: string;
+}
+
+export interface IParametersMerging {
+    destFile?: string;
+    rowOffset?: number;
+    byteOffset?: number;
 }
 
 export interface IParameters {
@@ -39,6 +59,73 @@ export default class Lvin extends EventEmitter {
     private _process: ChildProcess | undefined;
     private _stdoutRest: string = '';
 
+    public merge(files: IFileToBeMerged[], params: IParametersMerging, options?: ILvinOptions): Promise<void> {
+        return new Promise((resolve, reject) => {
+            if (options === undefined) {
+                options = {};
+            }
+            if (typeof params.destFile === 'string') {
+                (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(params.destFile) : (options as any).cwd;
+            }
+            const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${(Date.now())}.json`);
+            this._createConfigFile(files, configFile).then(() => {
+                const args: string[] = [
+                    '-s', // to post map into stdout
+                ];
+                // Provide config file path
+                args.push(...['-m', configFile]);
+                if (typeof params.destFile === 'string') {
+                    (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(params.destFile) : (options as any).cwd;
+                    args.push(...['-a', '-o', params.destFile]);
+                }
+                const started: number = Date.now();
+                console.log(`Command "lvin" is started (merging).`);
+                // Start process
+                this._process = spawn(Lvin.path, args, {
+                    cwd: (options as any).cwd !== undefined ? (options as any).cwd : process.cwd(),
+                });
+                this._process.stdout.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    if (typeof chunk !== 'string') {
+                        return;
+                    }
+                    chunk = `${this._stdoutRest}${chunk}`;
+                    const rest = this._getRest(chunk);
+                    this._stdoutRest = rest.rest;
+                    chunk = rest.cleared;
+                    const mapItems: IFileMapItem[] | undefined = this._getMapSegments(rest.cleared);
+                    if (mapItems !== undefined) {
+                        this.emit(Lvin.Events.map, mapItems);
+                    } else {
+                        process.stdout.write(chunk);
+                    }
+                });
+                this._process.once('close', () => {
+                    // Check rest part in stdout
+                    if (this._stdoutRest.trim() !== '') {
+                        const mapItems: IFileMapItem[] | undefined = this._getMapSegments(this._stdoutRest);
+                        if (mapItems !== undefined) {
+                            this.emit(Lvin.Events.map, mapItems);
+                        }
+                    }
+                    this._stdoutRest = '';
+                    // Remove config file
+                    fs.unlinkSync(configFile);
+                    console.log(`Command "lvin" (merging) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
+                    resolve();
+                });
+                this._process.once('error', (error: Error) => {
+                    this._process = undefined;
+                    reject(error);
+                });
+            }).catch((error: Error) => {
+                reject(error);
+            });
+        });
+    }
+
     public index(params: IParameters, options?: ILvinOptions): Promise<IIndexResult> {
         return new Promise((resolve, reject) => {
             // Check existing process
@@ -53,23 +140,17 @@ export default class Lvin extends EventEmitter {
                 options = {};
             }
             const args: string[] = [
-                '-t', // to post map into stdout
+                '-s', // to post map into stdout
             ];
             Object.keys(options).forEach((key: string) => {
                 args.push(...[`--${key}`, (options as any)[key]]);
             });
-            if (typeof params.destFile === 'string') {
-                // TODO: check size of output. if 0, do not make -a
-                args.push('-a');
-            }
-            args.push(params.srcFile);
+            args.push(...['-i', params.srcFile]);
             if (typeof params.injection === 'string') {
-                args.push(params.injection);
-            } else {
-                args.push('');
+                args.push(...['-t', params.injection]);
             }
             if (typeof params.destFile === 'string') {
-                args.push(params.destFile);
+                args.push(...['-a', '-o', params.destFile]);
             }
             const started: number = Date.now();
             console.log(`Command "lvin" is started.`);
@@ -204,6 +285,41 @@ export default class Lvin extends EventEmitter {
             }
         });
         return items.length > 0 ? items : undefined;
+    }
+
+    private _createConfigFile(files: IFileToBeMerged[], destFileName: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Check files
+            const missed: string[] = [];
+            files.forEach((file: IFileToBeMerged) => {
+                if (!fs.existsSync(file.file)) {
+                    missed.push(file.file);
+                }
+            });
+            if (missed.length !== 0) {
+                return reject(new Error(`Cannot file next file(s): ${missed.join('; ')}`));
+            }
+            // Prepare config file
+            const content: string = `[${files.map((file: IFileToBeMerged) => {
+                const record: any = { name: file.file, tag: path.basename(file.file) };
+                if (typeof file.offset === 'number') {
+                    record.offset = file.offset;
+                } else {
+                    record.offset = 0;
+                }
+                if (typeof file.year === 'number') {
+                    record.year = file.year;
+                }
+                return JSON.stringify(record);
+            }).join(',')}]`;
+            // Write config file
+            fs.writeFile(destFileName, content, (error: NodeJS.ErrnoException | null) => {
+                if (error) {
+                    return reject(error);
+                }
+                resolve();
+            });
+        });
     }
 
 }
