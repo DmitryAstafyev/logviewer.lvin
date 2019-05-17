@@ -15,6 +15,7 @@ export interface IIndexResult {
 
 export interface IFileToBeMerged {
     file: string;
+    sourceId: string;
     offset?: number;
     year?: number;
 }
@@ -301,7 +302,7 @@ export default class Lvin extends EventEmitter {
             }
             // Prepare config file
             const content: string = `[${files.map((file: IFileToBeMerged) => {
-                const record: any = { name: file.file, tag: path.basename(file.file) };
+                const record: any = { name: file.file, tag: file.sourceId };
                 if (typeof file.offset === 'number') {
                     record.offset = file.offset;
                 } else {

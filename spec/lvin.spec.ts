@@ -35,8 +35,8 @@ describe('Lvin tests', () => {
         });
         inst.merge(
             [
-                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a-s.log' },
-                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b-s.log' },
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a-s.log', sourceId: '1' },
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b-s.log', sourceId: '2' },
             ],
             { 
                 destFile: path.resolve(process.cwd(), './spec/logs/small.log.indexed'),
