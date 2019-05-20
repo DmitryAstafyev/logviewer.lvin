@@ -7,6 +7,7 @@
 import * as path from 'path';
 import { Lvin, IIndexResult } from '../src/index';
 console.log(process.cwd());
+jasmine.DEFAULT_TIMEOUT_INTERVAL = 60*1000;
 describe('Lvin tests', () => {
 /*
     it('Read and index file', (done: Function)=>{
@@ -35,8 +36,8 @@ describe('Lvin tests', () => {
         });
         inst.merge(
             [
-                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a-s.log', sourceId: '1' },
-                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b-s.log', sourceId: '2' },
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a.log', sourceId: 'timestamp_a.log' },
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b.log', sourceId: 'tm_b.log' },
             ],
             { 
                 destFile: path.resolve(process.cwd(), './spec/logs/small.log.indexed'),
