@@ -28,21 +28,37 @@ describe('Lvin tests', () => {
             done();
         });
     });
-*/
+    */
+   /*
     it('Merge', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
             console.log(`Map is gotten:`, map);
-        });
+        });//05-02-2019 12:38:36.506
         inst.merge(
             [
-                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a.log', sourceId: 'timestamp_a.log' },
-                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b.log', sourceId: 'tm_b.log' },
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a.log', sourceId: 'timestamp_a.log', format: 'MM-DD-YYYY hh:mm:ss.s' },
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b.log', sourceId: 'tm_b.log', format: 'MM-DD-YYYY hh:mm:ss.s' },
             ],
             { 
                 destFile: path.resolve(process.cwd(), './spec/logs/small.log.indexed'),
             }
         ).then(() => {
+            // Done
+            done();
+        }).catch((error: Error) => {
+            console.log(error);
+            expect(true).toBe(false);
+            done();
+        });
+    });
+    */
+   it('Test datetime', (done: Function)=>{
+        const inst: Lvin = new Lvin();
+        inst.datetimeFormatTest(
+            { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a.log', rowsToBeRead: 1000, format: 'MM-DD-YYYY hh:mm:ss.s' }
+        ).then((result) => {
+            console.log(result);
             // Done
             done();
         }).catch((error: Error) => {

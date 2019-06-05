@@ -13,11 +13,25 @@ export interface IIndexResult {
     map: IFileMapItem[];
 }
 
+export interface IDatetimeFormatTest {
+    file: string;
+    format: string;
+    rowsToBeRead: number;
+}
+
+export interface IDatetimeFormatTestResult {
+    readBytes: number;
+    readRows: number;
+    regExpStr: string;
+    matches: number;
+}
+
 export interface IFileToBeMerged {
     file: string;
     sourceId: string;
     offset?: number;
     year?: number;
+    format: string;
 }
 
 export interface IMergeResult {
@@ -47,6 +61,10 @@ export interface IParameters {
     injection?: string;
 }
 
+const CSettings = {
+    datetimeTestRowsToBeRead: 1000,
+};
+
 export default class Lvin extends EventEmitter {
 
     public static Events = {
@@ -60,6 +78,61 @@ export default class Lvin extends EventEmitter {
     private _process: ChildProcess | undefined;
     private _stdoutRest: string = '';
 
+    public datetimeFormatTest(file: IDatetimeFormatTest, options?: ILvinOptions): Promise<IDatetimeFormatTestResult> {
+        return new Promise((resolve, reject) => {
+            if (options === undefined) {
+                options = {};
+            }
+            (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(file.file) : (options as any).cwd;
+            const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${(Date.now())}.json`);
+            let output: string = '';
+            this._createFormatConfigFile(file, configFile).then(() => {
+                const args: string[] = [
+                    'format',
+                    '-c',
+                    configFile,
+                ];
+                const started: number = Date.now();
+                console.log(`Command "lvin" is started (datetime testing):\n\tcommand: ${Lvin.path} ${args.join(' ')}`);
+                // Start process
+                this._process = spawn(Lvin.path, args, {
+                    cwd: (options as any).cwd !== undefined ? (options as any).cwd : process.cwd(),
+                });
+                this._process.stdout.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    if (typeof chunk !== 'string') {
+                        return;
+                    }
+                    output += chunk;
+                });
+                this._process.once('close', (chunk: Buffer | string, out: any, arg: any) => {
+                    // Remove config file
+                    fs.unlinkSync(configFile);
+                    console.log(`Command "lvin" (datetime testing) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
+                    try {
+                        const result: any = JSON.parse(output);
+                        resolve({
+                            matches: result.matching_lines,
+                            readRows: result.matching_lines + result.nonmatching_lines,
+                            readBytes: result.processed_bytes,
+                            regExpStr: this._convertRegExpStrToES2018(result.regex),
+                        });
+                    } catch (e) {
+                        return reject(`Fail to get results of test due error: ${e.message}. Input: "${output}"`);
+                    }
+                });
+                this._process.once('error', (error: Error) => {
+                    this._process = undefined;
+                    reject(error);
+                });
+            }).catch((error: Error) => {
+                reject(new Error(`[test format] Fail to generate configuration due error: ${error.message}`));
+            });
+        });
+    }
+
     public merge(files: IFileToBeMerged[], params: IParametersMerging, options?: ILvinOptions): Promise<void> {
         return new Promise((resolve, reject) => {
             if (options === undefined) {
@@ -69,12 +142,12 @@ export default class Lvin extends EventEmitter {
                 (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(params.destFile) : (options as any).cwd;
             }
             const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${(Date.now())}.json`);
-            this._createConfigFile(files, configFile).then(() => {
+            this._createMergeConfigFile(files, configFile).then(() => {
                 const args: string[] = [
+                    'merge',
+                    configFile,
                     '-s', // to post map into stdout
                 ];
-                // Provide config file path
-                args.push(...['-m', configFile]);
                 if (typeof params.destFile === 'string') {
                     (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(params.destFile) : (options as any).cwd;
                     args.push(...['-a', '-o', params.destFile]);
@@ -122,7 +195,7 @@ export default class Lvin extends EventEmitter {
                     reject(error);
                 });
             }).catch((error: Error) => {
-                reject(error);
+                reject(new Error(`[merging] Fail to generate configuration due error: ${error.message}`));
             });
         });
     }
@@ -141,17 +214,18 @@ export default class Lvin extends EventEmitter {
                 options = {};
             }
             const args: string[] = [
+                'index',
+                params.srcFile,
                 '-s', // to post map into stdout
             ];
             Object.keys(options).forEach((key: string) => {
                 args.push(...[`--${key}`, (options as any)[key]]);
             });
-            args.push(...['-i', params.srcFile]);
-            if (typeof params.injection === 'string') {
-                args.push(...['-t', params.injection]);
-            }
             if (typeof params.destFile === 'string') {
                 args.push(...['-a', '-o', params.destFile]);
+            }
+            if (typeof params.injection === 'string') {
+                args.push(...['-t', params.injection]);
             }
             const started: number = Date.now();
             console.log(`Command "lvin" is started.`);
@@ -288,7 +362,7 @@ export default class Lvin extends EventEmitter {
         return items.length > 0 ? items : undefined;
     }
 
-    private _createConfigFile(files: IFileToBeMerged[], destFileName: string): Promise<void> {
+    private _createMergeConfigFile(files: IFileToBeMerged[], destFileName: string): Promise<void> {
         return new Promise((resolve, reject) => {
             // Check files
             const missed: string[] = [];
@@ -300,9 +374,22 @@ export default class Lvin extends EventEmitter {
             if (missed.length !== 0) {
                 return reject(new Error(`Cannot file next file(s): ${missed.join('; ')}`));
             }
+            const errors: string[] = [];
             // Prepare config file
-            const content: string = `[${files.map((file: IFileToBeMerged) => {
-                const record: any = { name: file.file, tag: file.sourceId };
+            const content: string = `[${files.map((file: IFileToBeMerged, index: number) => {
+                if (typeof file.file !== 'string' || file.file.trim() === '') {
+                    errors.push(`Record #${index}: file (filename) is missed`);
+                    return undefined;
+                }
+                if (typeof file.format !== 'string' || file.format.trim() === '') {
+                    errors.push(`${file.file}: format is missed`);
+                    return undefined;
+                }
+                if (typeof file.sourceId !== 'string' || file.sourceId.trim() === '') {
+                    errors.push(`${file.file}: sourceId is missed`);
+                    return undefined;
+                }
+                const record: any = { name: file.file, tag: file.sourceId, format: file.format };
                 if (typeof file.offset === 'number') {
                     record.offset = file.offset;
                 } else {
@@ -313,6 +400,9 @@ export default class Lvin extends EventEmitter {
                 }
                 return JSON.stringify(record);
             }).join(',')}]`;
+            if (errors.length !== 0) {
+                return reject(new Error(errors.join('\n')));
+            }
             // Write config file
             fs.writeFile(destFileName, content, (error: NodeJS.ErrnoException | null) => {
                 if (error) {
@@ -321,6 +411,56 @@ export default class Lvin extends EventEmitter {
                 resolve();
             });
         });
+    }
+
+    private _createFormatConfigFile(file: IDatetimeFormatTest, destFileName: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Check file
+            if (!fs.existsSync(file.file)) {
+                return reject(new Error(`Cannot file next file(s): ${file.file}`));
+            }
+            const errors: string[] = [];
+            if (typeof file.file !== 'string' || file.file.trim() === '') {
+                errors.push(`File (filename) is missed`);
+            }
+            if (typeof file.format !== 'string' || file.format.trim() === '') {
+                errors.push(`Format is missed`);
+            }
+            if (errors.length !== 0) {
+                return reject(new Error(errors.join('\n')));
+            }
+            // Prepare config file
+            const record: any = {
+                file: file.file,
+                format: file.format,
+                lines_to_test: file.rowsToBeRead === undefined ? CSettings.datetimeTestRowsToBeRead : file.rowsToBeRead,
+            };
+            // Write config file
+            fs.writeFile(destFileName, JSON.stringify(record), (error: NodeJS.ErrnoException | null) => {
+                if (error) {
+                    return reject(error);
+                }
+                resolve();
+            });
+        });
+    }
+
+    private _convertRegExpStrToES2018(str: string): string {
+        const renaming: Array<{ find: string, replace: string }> = [
+            { find: '<m>', replace: '<MM>' },
+            { find: '<d>', replace: '<DD>' },
+            { find: '<y>', replace: '<YYYY>' },
+            { find: '<H>', replace: '<hh>' },
+            { find: '<M>', replace: '<mm>' },
+            { find: '<S>', replace: '<ss>' },
+            { find: '<millis>', replace: '<s>' },
+            { find: '<timezone>', replace: '<TMZ>' },
+        ];
+        str = str.replace(/\?P\</gi, '?<');
+        renaming.forEach((rename) => {
+            str = str.replace(rename.find, rename.replace);
+        });
+        return str;
     }
 
 }

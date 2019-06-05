@@ -1,6 +1,6 @@
 export { getAsset } from './downloader';
 export { unpack, chmod } from './unpacker';
 
-import Lvin, { IFileMapItem, IIndexResult, ILvinOptions, IFileToBeMerged } from './wrapper';
+import Lvin, { IFileMapItem, IIndexResult, ILvinOptions, IFileToBeMerged, IDatetimeFormatTest, IDatetimeFormatTestResult } from './wrapper';
 
-export { Lvin, IFileMapItem, IIndexResult, ILvinOptions, IFileToBeMerged };
+export { Lvin, IFileMapItem, IIndexResult, ILvinOptions, IFileToBeMerged, IDatetimeFormatTest, IDatetimeFormatTestResult };
