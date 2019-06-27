@@ -29,7 +29,7 @@ describe('Lvin tests', () => {
         });
     });
     */
-   /*
+   
     it('Merge', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -52,7 +52,8 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    */
+    
+   /*
    it('Test datetime', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.datetimeFormatTest(
@@ -67,5 +68,5 @@ describe('Lvin tests', () => {
             done();
         });
     });
-
+*/
 });

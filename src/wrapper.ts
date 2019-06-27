@@ -84,7 +84,7 @@ export default class Lvin extends EventEmitter {
                 options = {};
             }
             (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(file.file) : (options as any).cwd;
-            const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${(Date.now())}.json`);
+            const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${this._getFileName()}.json`);
             let output: string = '';
             this._createFormatConfigFile(file, configFile).then(() => {
                 const args: string[] = [
@@ -141,7 +141,7 @@ export default class Lvin extends EventEmitter {
             if (typeof params.destFile === 'string') {
                 (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(params.destFile) : (options as any).cwd;
             }
-            const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${(Date.now())}.json`);
+            const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${this._getFileName()}.json`);
             this._createMergeConfigFile(files, configFile).then(() => {
                 const args: string[] = [
                     'merge',
@@ -153,6 +153,7 @@ export default class Lvin extends EventEmitter {
                     args.push(...['-a', '-o', params.destFile]);
                 }
                 const started: number = Date.now();
+                let error: string = '';
                 console.log(`Command "lvin" is started (merging).`);
                 // Start process
                 this._process = spawn(Lvin.path, args, {
@@ -176,7 +177,15 @@ export default class Lvin extends EventEmitter {
                         process.stdout.write(chunk);
                     }
                 });
+                this._process.stderr.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    error += typeof chunk !== 'string' ? 'undefined error' : chunk;
+                });
                 this._process.once('close', () => {
+                    // Remove config file
+                    fs.unlinkSync(configFile);
                     // Check rest part in stdout
                     if (this._stdoutRest.trim() !== '') {
                         const mapItems: IFileMapItem[] | undefined = this._getMapSegments(this._stdoutRest);
@@ -185,14 +194,16 @@ export default class Lvin extends EventEmitter {
                         }
                     }
                     this._stdoutRest = '';
-                    // Remove config file
-                    fs.unlinkSync(configFile);
-                    console.log(`Command "lvin" (merging) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
-                    resolve();
+                    if (error.trim() !== '') {
+                        console.log(`Command "lvin" (merging) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s with next error: ${error}.`);
+                        reject(new Error(error));
+                    } else {
+                        console.log(`Command "lvin" (merging) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
+                        resolve();
+                    }
                 });
-                this._process.once('error', (error: Error) => {
-                    this._process = undefined;
-                    reject(error);
+                this._process.once('error', (processError: Error) => {
+                    reject(processError);
                 });
             }).catch((error: Error) => {
                 reject(new Error(`[merging] Fail to generate configuration due error: ${error.message}`));
@@ -229,6 +240,7 @@ export default class Lvin extends EventEmitter {
             }
             const started: number = Date.now();
             console.log(`Command "lvin" is started.`);
+            let error: string = '';
             // Start process
             this._process = spawn(Lvin.path, args, {
                 cwd: path.dirname(params.srcFile),
@@ -251,6 +263,12 @@ export default class Lvin extends EventEmitter {
                     process.stdout.write(chunk);
                 }
             });
+            this._process.stderr.on('data', (chunk: Buffer | string) => {
+                if (chunk instanceof Buffer) {
+                    chunk = chunk.toString('utf8');
+                }
+                error += typeof chunk !== 'string' ? 'undefined error' : chunk;
+            });
             this._process.once('close', () => {
                 const offset = {
                     row: params.rowOffset === undefined ? 0 : params.rowOffset,
@@ -264,6 +282,10 @@ export default class Lvin extends EventEmitter {
                     }
                 }
                 this._stdoutRest = '';
+                if (error !== '') {
+                    console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s with error: ${error}.`);
+                    return reject(new Error(error));
+                }
                 console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
                 // Read map
                 this._readMeta(params.srcFile, offset).then((map: IFileMapItem[]) => {
@@ -276,9 +298,9 @@ export default class Lvin extends EventEmitter {
                     reject(metaError);
                 });
             });
-            this._process.once('error', (error: Error) => {
+            this._process.once('error', (processError: Error) => {
                 this._process = undefined;
-                reject(error);
+                reject(processError);
             });
         });
     }
@@ -461,6 +483,10 @@ export default class Lvin extends EventEmitter {
             str = str.replace(rename.find, rename.replace);
         });
         return str;
+    }
+
+    private _getFileName(): string {
+        return `${Date.now()}-${Math.round(Math.random() * 1000)}-${Math.round(Math.random() * 1000)}-${Math.round(Math.random() * 1000)}`;
     }
 
 }
