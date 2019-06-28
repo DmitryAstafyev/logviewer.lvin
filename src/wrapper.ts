@@ -154,7 +154,7 @@ export default class Lvin extends EventEmitter {
                 }
                 const started: number = Date.now();
                 let error: string = '';
-                console.log(`Command "lvin" is started (merging).`);
+                console.log(`Command "lvin" is started (merging): ${Lvin.path} ${args.join(' ')}.`);
                 // Start process
                 this._process = spawn(Lvin.path, args, {
                     cwd: (options as any).cwd !== undefined ? (options as any).cwd : process.cwd(),
