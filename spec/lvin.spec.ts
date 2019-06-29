@@ -9,7 +9,7 @@ import { Lvin, IIndexResult } from '../src/index';
 console.log(process.cwd());
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 60*1000;
 describe('Lvin tests', () => {
-/*
+
     it('Read and index file', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -28,7 +28,7 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    */
+    
    
     it('Merge', (done: Function)=>{
         const inst: Lvin = new Lvin();
@@ -53,7 +53,7 @@ describe('Lvin tests', () => {
         });
     });
     
-   /*
+   
    it('Test datetime', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.datetimeFormatTest(
@@ -68,5 +68,5 @@ describe('Lvin tests', () => {
             done();
         });
     });
-*/
+
 });

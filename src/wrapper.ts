@@ -107,6 +107,15 @@ export default class Lvin extends EventEmitter {
                     }
                     output += chunk;
                 });
+                this._process.stderr.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    if (typeof chunk !== 'string') {
+                        return;
+                    }
+                    output += chunk;
+                });
                 this._process.once('close', (chunk: Buffer | string, out: any, arg: any) => {
                     // Remove config file
                     fs.unlinkSync(configFile);
@@ -123,9 +132,9 @@ export default class Lvin extends EventEmitter {
                         return reject(`Fail to get results of test due error: ${e.message}. Input: "${output}"`);
                     }
                 });
-                this._process.once('error', (error: Error) => {
+                this._process.once('error', (processError: Error) => {
                     this._process = undefined;
-                    reject(error);
+                    reject(processError);
                 });
             }).catch((error: Error) => {
                 reject(new Error(`[test format] Fail to generate configuration due error: ${error.message}`));
@@ -239,7 +248,7 @@ export default class Lvin extends EventEmitter {
                 args.push(...['-t', params.injection]);
             }
             const started: number = Date.now();
-            console.log(`Command "lvin" is started.`);
+            console.log(`Command "lvin" is started (indexing): ${Lvin.path} ${args.join(' ')}.`);
             let error: string = '';
             // Start process
             this._process = spawn(Lvin.path, args, {
