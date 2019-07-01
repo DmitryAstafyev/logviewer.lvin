@@ -81,7 +81,7 @@ function getAssetName(version: string): string {
             platform = 'win64';
         }
     }
-    return `indexing@${version}-${process.platform}.tgz`;
+    return `indexing@${version}-${platform}.tgz`;
 }
 
 function getExpectedOriFileName(): string {
