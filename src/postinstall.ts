@@ -12,27 +12,53 @@ const Settings: {
     bin: path.join(__dirname, '../bin'),
     user: 'marcmo',
     repo: 'logviewer_indexer',
-    version: '0.21.3',
+    version: '0.21.4',
 };
 
 const OriginalFileName: {
     darwin: string,
     win32: string,
+    win64: string,
     linux: string,
 } = {
     darwin: 'logviewer_parser',
     win32: 'logviewer_parser.exe',
+    win64: 'logviewer_parser.exe',
     linux: 'logviewer_parser',
 };
 
 const TargetFileName: {
     darwin: string,
     win32: string,
+    win64: string,
     linux: string,
 } = {
     darwin: 'lvin',
     win32: 'lvin.exe',
+    win64: 'lvin.exe',
     linux: 'lvin',
+};
+
+const CPlatforms = {
+    aix: 'aix',
+    darwin: 'darwin',
+    freebsd: 'freebsd',
+    linux: 'linux',
+    openbsd: 'openbsd',
+    sunos: 'sunos',
+    win32: 'win32',
+};
+
+const CArch = {
+    arm: 'arm',
+    arm64: 'arm64',
+    ia32: 'ia32',
+    ppc: 'ppc',
+    ppc64: 'ppc64',
+    s390: 's390',
+    s390x: 's390x',
+    x32: 'x32',
+    x64: 'x64',
 };
 
 function isNodeModulesExist(): boolean {
@@ -49,6 +75,12 @@ function isNodeModulesExist(): boolean {
 
 function getAssetName(version: string): string {
     // indexing@0.2.1-darwin.tgz
+    let platform: string = process.platform;
+    if (platform === CPlatforms.win32) {
+        if ([CArch.x64, CArch.ppc64].indexOf(process.arch) !== -1) {
+            platform = 'win64';
+        }
+    }
     return `indexing@${version}-${process.platform}.tgz`;
 }
 
@@ -67,8 +99,8 @@ function fail(message: string, code: number = 1) {
     });
 }
 
-function success() {
-    console.log(`Sources successfuly downloaded and unpacked.`);
+function success(file: string) {
+    console.log(`Sources successfuly downloaded and unpacked: ${file}.`);
 }
 
 export function postInstall() {
@@ -87,12 +119,13 @@ export function postInstall() {
     // Create bin folder
     fs.mkdirSync(Settings.bin);
     // Downloading binary
+    const sourceFile: string = getAssetName(Settings.version);
     getAsset({
         token: (process.env as any).GITHUB_TOKEN,
         user: Settings.user,
         repo: Settings.repo,
     }, {
-        name: getAssetName(Settings.version),
+        name: sourceFile,
         version: Settings.version,
         dest: Settings.bin,
     }).then((tgzfile: string) => {
@@ -111,7 +144,7 @@ export function postInstall() {
             // Correct params
             chmod(cropped);
             // Done
-            success();
+            success(sourceFile);
         }).catch((unpackError: Error) => {
             fail(`Fail to unpack binary source due error: ${unpackError.message}`);
         });
