@@ -423,7 +423,7 @@ export default class Lvin extends EventEmitter {
             if (isNaN(offset.row) || isNaN(offset.byte) || !isFinite(offset.byte) || !isFinite(offset.row)) {
                 return reject(new Error(`Offset should be defined as { row: number, byte: number } object. And row and byte shound finite and not NaN.`));
             }
-            fs.readFile(metaFile, (error: NodeJS.ErrnoException, content: Buffer) => {
+            fs.readFile(metaFile, (error: NodeJS.ErrnoException | null, content: Buffer) => {
                 if (error) {
                     return reject(error);
                 }
