@@ -7,10 +7,27 @@
 import * as path from 'path';
 import { Lvin, IIndexResult } from '../src/index';
 console.log(process.cwd());
-jasmine.DEFAULT_TIMEOUT_INTERVAL = 60*1000;
+jasmine.DEFAULT_TIMEOUT_INTERVAL = 6000*1000;
 describe('Lvin tests', () => {
-
-    /*
+    
+    it('Read and index DLT file', (done: Function)=>{
+        const inst: Lvin = new Lvin();
+        inst.on(Lvin.Events.map, (map) => {
+            console.log(`Map is gotten:`, map);
+        });
+        inst.dlt({ 
+            srcFile: path.resolve(process.cwd(), './spec/logs/DTC_SP21.dlt'),
+            destFile: path.resolve(process.cwd(), './spec/logs/dlt.output'),
+            injection: 'PLUGIN_ID',
+        }).then((results: IIndexResult) => {
+            // Done
+            done();
+        }).catch((error: Error) => {
+            console.log(error);
+            expect(true).toBe(false);
+            done();
+        });
+    });
     it('Read and index file', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -30,7 +47,7 @@ describe('Lvin tests', () => {
         });
     });
     
-   */
+
     it('Merge', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -53,8 +70,7 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    
-   /*
+
    it('Test datetime', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.datetimeFormatTest(
@@ -69,5 +85,4 @@ describe('Lvin tests', () => {
             done();
         });
     });
-*/
 });

@@ -314,6 +314,100 @@ export default class Lvin extends EventEmitter {
         });
     }
 
+    public dlt(params: IParameters, options?: ILvinOptions): Promise<IIndexResult> {
+        return new Promise((resolve, reject) => {
+            // Check existing process
+            if (this._process !== undefined) {
+                return new Error(`Cannot proceed because previous process wasn't finished yet.`);
+            }
+            // Check files
+            if (!fs.existsSync(params.srcFile)) {
+                return reject(new Error(`Source file "${params.srcFile}" doesn't exist.`));
+            }
+            if (options === undefined) {
+                options = {};
+            }
+            const args: string[] = [
+                'dlt',
+                params.srcFile,
+                '-s', // to post map into stdout
+            ];
+            Object.keys(options).forEach((key: string) => {
+                args.push(...[`--${key}`, (options as any)[key]]);
+            });
+            if (typeof params.destFile === 'string') {
+                args.push(...['-a', '-o', params.destFile]);
+            }
+            if (typeof params.injection === 'string') {
+                args.push(...['-t', params.injection]);
+            }
+            const started: number = Date.now();
+            console.log(`Command "lvin" is started (dlt): ${Lvin.path} ${args.join(' ')}.`);
+            let error: string = '';
+            // Start process
+            this._process = spawn(Lvin.path, args, {
+                cwd: path.dirname(params.srcFile),
+            });
+            this._process.stdout.on('data', (chunk: Buffer | string) => {
+                if (chunk instanceof Buffer) {
+                    chunk = chunk.toString('utf8');
+                }
+                if (typeof chunk !== 'string') {
+                    return;
+                }
+                chunk = `${this._stdoutRest}${chunk}`;
+                const rest = this._getRest(chunk);
+                this._stdoutRest = rest.rest;
+                chunk = rest.cleared;
+                const mapItems: IFileMapItem[] | undefined = this._getMapSegments(rest.cleared);
+                if (mapItems !== undefined) {
+                    this.emit(Lvin.Events.map, mapItems);
+                } else {
+                    process.stdout.write(chunk);
+                }
+            });
+            this._process.stderr.on('data', (chunk: Buffer | string) => {
+                if (chunk instanceof Buffer) {
+                    chunk = chunk.toString('utf8');
+                }
+                error += typeof chunk !== 'string' ? 'undefined error' : chunk;
+            });
+            this._process.once('close', () => {
+                const offset = {
+                    row: params.rowOffset === undefined ? 0 : params.rowOffset,
+                    byte: params.byteOffset === undefined ? 0 : params.byteOffset,
+                };
+                // Check rest part in stdout
+                if (this._stdoutRest.trim() !== '') {
+                    const mapItems: IFileMapItem[] | undefined = this._getMapSegments(this._stdoutRest);
+                    if (mapItems !== undefined) {
+                        this.emit(Lvin.Events.map, mapItems);
+                    }
+                }
+                this._stdoutRest = '';
+                if (error !== '') {
+                    console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s with error: ${error}.`);
+                    return reject(new Error(error));
+                }
+                console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
+                // Read map
+                this._readMeta(params.srcFile, offset).then((map: IFileMapItem[]) => {
+                    resolve({
+                        size: 0,
+                        map: map,
+                    });
+                }).catch((metaError: Error) => {
+                    this._process = undefined;
+                    reject(metaError);
+                });
+            });
+            this._process.once('error', (processError: Error) => {
+                this._process = undefined;
+                reject(processError);
+            });
+        });
+    }
+
     private _readMeta(srcFile: string, offset: { row: number, byte: number }): Promise<IFileMapItem[]> {
         return new Promise((resolve, reject) => {
             const metaFile: string = path.resolve(`${srcFile}.map.json`);
