@@ -53,6 +53,19 @@ export interface IParametersMerging {
     byteOffset?: number;
 }
 
+export interface IParametersDlt {
+    logLevel?: number;
+    ECUID?: string[];
+    APID?: string[];
+    CTID?: string[];
+}
+
+export interface IDLTStats {
+    app_ids?: string[];
+    context_ids?: string[];
+    ecu_ids?: string[];
+}
+
 export interface IParameters {
     rowOffset?: number;
     byteOffset?: number;
@@ -314,7 +327,120 @@ export default class Lvin extends EventEmitter {
         });
     }
 
-    public dlt(params: IParameters, options?: ILvinOptions): Promise<IIndexResult> {
+    public dlt(params: IParameters, dlt?: IParametersDlt, options?: ILvinOptions): Promise<IIndexResult> {
+        return new Promise((resolve, reject) => {
+            // Check existing process
+            if (this._process !== undefined) {
+                return new Error(`Cannot proceed because previous process wasn't finished yet.`);
+            }
+            // Check files
+            if (!fs.existsSync(params.srcFile)) {
+                return reject(new Error(`Source file "${params.srcFile}" doesn't exist.`));
+            }
+            if (options === undefined) {
+                options = {};
+            }
+            if (dlt === undefined) {
+                dlt = {
+                    logLevel: 6,
+                };
+            }
+            if (typeof dlt.logLevel !== 'number' || dlt.logLevel < 0 || dlt.logLevel > 6) {
+                dlt.logLevel = 6;
+            }
+            const configFile: string = path.resolve(path.dirname(params.srcFile), `${this._getFileName()}.json`);
+            this._createDLTConfigFile(dlt, configFile).then(() => {
+                const args: string[] = [
+                    'dlt',
+                    params.srcFile,
+                    '-s', // to post map into stdout
+                    '-f',
+                    configFile,
+                ];
+                if (options === undefined) {
+                    options = {};
+                }
+                Object.keys(options).forEach((key: string) => {
+                    args.push(...[`--${key}`, (options as any)[key]]);
+                });
+                if (typeof params.destFile === 'string') {
+                    args.push(...['-a', '-o', params.destFile]);
+                }
+                if (typeof params.injection === 'string') {
+                    args.push(...['-t', params.injection]);
+                }
+                const started: number = Date.now();
+                console.log(`Command "lvin" is started (dlt): ${Lvin.path} ${args.join(' ')}.`);
+                let error: string = '';
+                // Start process
+                this._process = spawn(Lvin.path, args, {
+                    cwd: path.dirname(params.srcFile),
+                });
+                this._process.stdout.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    if (typeof chunk !== 'string') {
+                        return;
+                    }
+                    chunk = `${this._stdoutRest}${chunk}`;
+                    const rest = this._getRest(chunk);
+                    this._stdoutRest = rest.rest;
+                    chunk = rest.cleared;
+                    const mapItems: IFileMapItem[] | undefined = this._getMapSegments(rest.cleared);
+                    if (mapItems !== undefined) {
+                        this.emit(Lvin.Events.map, mapItems);
+                    } else {
+                        process.stdout.write(chunk);
+                    }
+                });
+                this._process.stderr.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    error += typeof chunk !== 'string' ? 'undefined error' : chunk;
+                });
+                this._process.once('close', () => {
+                    fs.unlinkSync(configFile);
+                    const offset = {
+                        row: params.rowOffset === undefined ? 0 : params.rowOffset,
+                        byte: params.byteOffset === undefined ? 0 : params.byteOffset,
+                    };
+                    // Check rest part in stdout
+                    if (this._stdoutRest.trim() !== '') {
+                        const mapItems: IFileMapItem[] | undefined = this._getMapSegments(this._stdoutRest);
+                        if (mapItems !== undefined) {
+                            this.emit(Lvin.Events.map, mapItems);
+                        }
+                    }
+                    this._stdoutRest = '';
+                    if (error !== '') {
+                        console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s with error: ${error}.`);
+                        return reject(new Error(error));
+                    }
+                    console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
+                    // Read map
+                    this._readMeta(params.srcFile, offset).then((map: IFileMapItem[]) => {
+                        resolve({
+                            size: 0,
+                            map: map,
+                        });
+                    }).catch((metaError: Error) => {
+                        this._process = undefined;
+                        reject(metaError);
+                    });
+                });
+                this._process.once('error', (processError: Error) => {
+                    this._process = undefined;
+                    reject(processError);
+                });
+            }).catch((configError: Error) => {
+                reject(configError);
+            });
+        });
+    }
+
+    public dltStat(params: IParameters, options?: ILvinOptions): Promise<IDLTStats> {
         return new Promise((resolve, reject) => {
             // Check existing process
             if (this._process !== undefined) {
@@ -328,10 +454,13 @@ export default class Lvin extends EventEmitter {
                 options = {};
             }
             const args: string[] = [
-                'dlt',
+                'dlt-stats',
                 params.srcFile,
                 '-s', // to post map into stdout
             ];
+            if (options === undefined) {
+                options = {};
+            }
             Object.keys(options).forEach((key: string) => {
                 args.push(...[`--${key}`, (options as any)[key]]);
             });
@@ -342,8 +471,9 @@ export default class Lvin extends EventEmitter {
                 args.push(...['-t', params.injection]);
             }
             const started: number = Date.now();
-            console.log(`Command "lvin" is started (dlt): ${Lvin.path} ${args.join(' ')}.`);
+            console.log(`Command "lvin" is started (dlt-stats): ${Lvin.path} ${args.join(' ')}.`);
             let error: string = '';
+            let output: string = '';
             // Start process
             this._process = spawn(Lvin.path, args, {
                 cwd: path.dirname(params.srcFile),
@@ -355,16 +485,7 @@ export default class Lvin extends EventEmitter {
                 if (typeof chunk !== 'string') {
                     return;
                 }
-                chunk = `${this._stdoutRest}${chunk}`;
-                const rest = this._getRest(chunk);
-                this._stdoutRest = rest.rest;
-                chunk = rest.cleared;
-                const mapItems: IFileMapItem[] | undefined = this._getMapSegments(rest.cleared);
-                if (mapItems !== undefined) {
-                    this.emit(Lvin.Events.map, mapItems);
-                } else {
-                    process.stdout.write(chunk);
-                }
+                output += chunk;
             });
             this._process.stderr.on('data', (chunk: Buffer | string) => {
                 if (chunk instanceof Buffer) {
@@ -373,33 +494,17 @@ export default class Lvin extends EventEmitter {
                 error += typeof chunk !== 'string' ? 'undefined error' : chunk;
             });
             this._process.once('close', () => {
-                const offset = {
-                    row: params.rowOffset === undefined ? 0 : params.rowOffset,
-                    byte: params.byteOffset === undefined ? 0 : params.byteOffset,
-                };
-                // Check rest part in stdout
-                if (this._stdoutRest.trim() !== '') {
-                    const mapItems: IFileMapItem[] | undefined = this._getMapSegments(this._stdoutRest);
-                    if (mapItems !== undefined) {
-                        this.emit(Lvin.Events.map, mapItems);
-                    }
-                }
-                this._stdoutRest = '';
                 if (error !== '') {
                     console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s with error: ${error}.`);
                     return reject(new Error(error));
                 }
                 console.log(`Command "lvin" is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
-                // Read map
-                this._readMeta(params.srcFile, offset).then((map: IFileMapItem[]) => {
-                    resolve({
-                        size: 0,
-                        map: map,
-                    });
-                }).catch((metaError: Error) => {
-                    this._process = undefined;
-                    reject(metaError);
-                });
+                try {
+                    const json = JSON.parse(output);
+                    resolve(json);
+                } catch (e) {
+                    reject(new Error(`Fail to parse result due error: ${e.message}`));
+                }
             });
             this._process.once('error', (processError: Error) => {
                 this._process = undefined;
@@ -485,6 +590,24 @@ export default class Lvin extends EventEmitter {
             }
         });
         return items.length > 0 ? items : undefined;
+    }
+
+    private _createDLTConfigFile(dlt: IParametersDlt, destFileName: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const json: any = {
+                min_log_level: dlt.logLevel,
+            };
+            if (dlt.APID instanceof Array) { json.app_ids = dlt.APID; }
+            if (dlt.CTID instanceof Array) { json.context_ids = dlt.CTID; }
+            if (dlt.ECUID instanceof Array) { json.ecu_ids = dlt.ECUID; }
+            // Write config file
+            fs.writeFile(destFileName, JSON.stringify(json), (error: NodeJS.ErrnoException | null) => {
+                if (error) {
+                    return reject(error);
+                }
+                resolve();
+            });
+        });
     }
 
     private _createMergeConfigFile(files: IFileToBeMerged[], destFileName: string): Promise<void> {

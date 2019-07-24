@@ -5,11 +5,30 @@
 
 //./node_modules/.bin/jasmine-ts src/something.spec.ts
 import * as path from 'path';
-import { Lvin, IIndexResult } from '../src/index';
+import { Lvin, IIndexResult, IDLTStats } from '../src/index';
 console.log(process.cwd());
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 6000*1000;
 describe('Lvin tests', () => {
-    
+    /*
+    it('Getting stats of DLT file', (done: Function)=>{
+        const inst: Lvin = new Lvin();
+        inst.on(Lvin.Events.map, (map) => {
+            console.log(`Map is gotten:`, map);
+        });
+        inst.dltStat({ 
+            srcFile: path.resolve(process.cwd(), './spec/logs/DTC_SP21.dlt')
+        }).then((results: IDLTStats) => {
+            console.log(results);
+            // Done
+            done();
+        }).catch((error: Error) => {
+            console.log(error);
+            expect(true).toBe(false);
+            done();
+        });
+    });
+    */
+
     it('Read and index DLT file', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -19,6 +38,10 @@ describe('Lvin tests', () => {
             srcFile: path.resolve(process.cwd(), './spec/logs/DTC_SP21.dlt'),
             destFile: path.resolve(process.cwd(), './spec/logs/dlt.output'),
             injection: 'PLUGIN_ID',
+        },
+        {
+            logLevel:6,
+            APID: ['Vin', 'VSom']
         }).then((results: IIndexResult) => {
             // Done
             done();
@@ -28,7 +51,8 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    /*
+
+/*
     it('Read and index file', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -47,8 +71,8 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    
-
+    */
+   /*
     it('Merge', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -71,7 +95,8 @@ describe('Lvin tests', () => {
             done();
         });
     });
-
+    */
+   /*
    it('Test datetime', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.datetimeFormatTest(
@@ -85,6 +110,5 @@ describe('Lvin tests', () => {
             expect(true).toBe(false);
             done();
         });
-    });
-    */
+    });*/
 });
