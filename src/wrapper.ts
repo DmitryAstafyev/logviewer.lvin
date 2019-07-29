@@ -11,6 +11,7 @@ export interface IFileMapItem {
 export interface IIndexResult {
     size: number;
     map: IFileMapItem[];
+    warnings?: string[];
 }
 
 export interface IDatetimeFormatTest {
@@ -60,10 +61,21 @@ export interface IParametersDlt {
     CTID?: string[];
 }
 
+export interface IDLTStatsRecord {
+    non_log: number;
+    log_fatal: number;
+    log_error: number;
+    log_warning: number;
+    log_info: number;
+    log_debug: number;
+    log_verbose: number;
+    log_invalid: number;
+}
+
 export interface IDLTStats {
-    app_ids?: string[];
-    context_ids?: string[];
-    ecu_ids?: string[];
+    app_ids?: Array<string | IDLTStatsRecord>;
+    context_ids?: Array<string | IDLTStatsRecord>;
+    ecu_ids?: Array<string | IDLTStatsRecord>;
 }
 
 export interface IParameters {
@@ -372,6 +384,7 @@ export default class Lvin extends EventEmitter {
                 const started: number = Date.now();
                 console.log(`Command "lvin" is started (dlt): ${Lvin.path} ${args.join(' ')}.`);
                 let error: string = '';
+                const warnings: string[] = [];
                 // Start process
                 this._process = spawn(Lvin.path, args, {
                     cwd: path.dirname(params.srcFile),
@@ -398,7 +411,13 @@ export default class Lvin extends EventEmitter {
                     if (chunk instanceof Buffer) {
                         chunk = chunk.toString('utf8');
                     }
-                    error += typeof chunk !== 'string' ? 'undefined error' : chunk;
+                    // {"severity":"WARNING","text":"9: could not extract timestamp...", "line_nr":null}
+                    try {
+                        const warning: any = JSON.parse(chunk);
+                        warnings.push(`${warning.severity}: ${warning.text}${warning.line_nr ? ` (line: ${warning.line_nr})` : ''}`);
+                    } catch (e) {
+                        error += typeof chunk !== 'string' ? 'undefined error' : chunk;
+                    }
                 });
                 this._process.once('close', () => {
                     fs.unlinkSync(configFile);
@@ -424,6 +443,7 @@ export default class Lvin extends EventEmitter {
                         resolve({
                             size: 0,
                             map: map,
+                            warnings: warnings,
                         });
                     }).catch((metaError: Error) => {
                         this._process = undefined;

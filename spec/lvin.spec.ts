@@ -41,8 +41,9 @@ describe('Lvin tests', () => {
         },
         {
             logLevel:6,
-            APID: ['Vin', 'VSom']
+            //APID: ['Vin', 'VSom']
         }).then((results: IIndexResult) => {
+            console.log(results);
             // Done
             done();
         }).catch((error: Error) => {
