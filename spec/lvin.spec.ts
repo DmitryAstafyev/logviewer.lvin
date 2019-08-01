@@ -5,7 +5,7 @@
 
 //./node_modules/.bin/jasmine-ts src/something.spec.ts
 import * as path from 'path';
-import { Lvin, IIndexResult, IDLTStats } from '../src/index';
+import { Lvin, IIndexResult, IDLTStatsResults } from '../src/index';
 console.log(process.cwd());
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 6000*1000;
 describe('Lvin tests', () => {
@@ -17,7 +17,7 @@ describe('Lvin tests', () => {
         });
         inst.dltStat({ 
             srcFile: path.resolve(process.cwd(), './spec/logs/DTC_SP21.dlt')
-        }).then((results: IDLTStats) => {
+        }).then((results: IDLTStatsResults) => {
             console.log(results);
             // Done
             done();
@@ -28,7 +28,7 @@ describe('Lvin tests', () => {
         });
     });
     */
-
+/*
     it('Read and index DLT file', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -52,8 +52,8 @@ describe('Lvin tests', () => {
             done();
         });
     });
+*/
 
-/*
     it('Read and index file', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -72,7 +72,7 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    */
+    
    /*
     it('Merge', (done: Function)=>{
         const inst: Lvin = new Lvin();
@@ -81,8 +81,8 @@ describe('Lvin tests', () => {
         });//05-02-2019 12:38:36.506
         inst.merge(
             [
-                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a.log', sourceId: 'timestamp_a.log', format: 'DD-MM-YYYY hh:mm:ss.s' },
-                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b.log', sourceId: 'tm_b.log', format: 'DD-MM-YYYY hh:mm:ss.s' },
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a.log', sourceId: 'timestamp_a.log', format: 'MM-DD-YYYY hh:mm:ss.s' },
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b.log', sourceId: 'tm_b.log', format: 'MM-DD-YYYY hh:mm:ss.s' },
             ],
             { 
                 destFile: path.resolve(process.cwd(), './spec/logs/small.log.indexed'),
