@@ -27,8 +27,8 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    */
-/*
+    
+
     it('Read and index DLT file', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -52,7 +52,7 @@ describe('Lvin tests', () => {
             done();
         });
     });
-*/
+
 
     it('Read and index file', (done: Function)=>{
         const inst: Lvin = new Lvin();
@@ -72,8 +72,53 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    
-   /*
+    */
+    /*
+    it('Discover', (done: Function)=>{
+        const inst: Lvin = new Lvin();
+        inst.on(Lvin.Events.map, (map) => {
+            console.log(`Map is gotten:`, map);
+        });//05-02-2019 12:38:36.506
+        inst.datetimeDiscover(
+            [
+                '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a.log',
+                '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b.log',
+            ]
+        ).then((res) => {
+            // Done
+            console.log(res);
+            done();
+        }).catch((error: Error) => {
+            console.log(error);
+            expect(true).toBe(false);
+            done();
+        });
+    });
+    */
+    /*
+   it('Concat', (done: Function)=>{
+        const inst: Lvin = new Lvin();
+        inst.on(Lvin.Events.map, (map) => {
+            console.log(`Map is gotten:`, map);
+        });//05-02-2019 12:38:36.506
+        inst.concat(
+            [
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/timestamp_a.log', sourceId: 'timestamp_a.log'},
+                { file: '/Users/dmitry.astafyev/WebstormProjects/logviewer/npm.indexer/spec/logs/tm_b.log', sourceId: 'tm_b.log' },
+            ],
+            { 
+                destFile: path.resolve(process.cwd(), './spec/logs/small.log.indexed'),
+            }
+        ).then(() => {
+            // Done
+            done();
+        }).catch((error: Error) => {
+            console.log(error);
+            expect(true).toBe(false);
+            done();
+        });
+    });
+*/
     it('Merge', (done: Function)=>{
         const inst: Lvin = new Lvin();
         inst.on(Lvin.Events.map, (map) => {
@@ -96,7 +141,7 @@ describe('Lvin tests', () => {
             done();
         });
     });
-    */
+    
    /*
    it('Test datetime', (done: Function)=>{
         const inst: Lvin = new Lvin();
@@ -111,5 +156,6 @@ describe('Lvin tests', () => {
             expect(true).toBe(false);
             done();
         });
-    });*/
+    });
+    */
 });

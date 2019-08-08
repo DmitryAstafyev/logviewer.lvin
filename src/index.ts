@@ -8,9 +8,10 @@ import Lvin, {
     IFileToBeMerged,
     IDatetimeFormatTest,
     IDatetimeFormatTestResult,
+    IDatetimeDiscoverResult,
     IDLTStats,
     IDLTStatsRecord,
-    IDLTLogMessage,
+    ILogMessage,
     IDLTStatsResults } from './wrapper';
 
 export { Lvin,
@@ -20,7 +21,8 @@ export { Lvin,
     IFileToBeMerged,
     IDatetimeFormatTest,
     IDatetimeFormatTestResult,
+    IDatetimeDiscoverResult,
     IDLTStats,
     IDLTStatsRecord,
-    IDLTLogMessage,
+    ILogMessage,
     IDLTStatsResults };

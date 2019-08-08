@@ -12,7 +12,7 @@ const Settings: {
     bin: path.join(__dirname, '../bin'),
     user: 'marcmo',
     repo: 'logviewer_indexer',
-    version: '0.30.0',
+    version: '0.32.1',
 };
 
 const OriginalFileName: {

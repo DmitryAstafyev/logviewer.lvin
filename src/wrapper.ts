@@ -11,7 +11,7 @@ export interface IFileMapItem {
 export interface IIndexResult {
     size: number;
     map: IFileMapItem[];
-    logs?: IDLTLogMessage[];
+    logs?: ILogMessage[];
 }
 
 export interface IDatetimeFormatTest {
@@ -25,6 +25,17 @@ export interface IDatetimeFormatTestResult {
     readRows: number;
     regExpStr: string;
     matches: number;
+}
+
+export interface IDatetimeDiscoverResult {
+    format: string;
+    path: string;
+    error?: string;
+}
+
+export interface IFileToBeCancat {
+    file: string;
+    sourceId: string;
 }
 
 export interface IFileToBeMerged {
@@ -49,6 +60,12 @@ export interface ILvinOptions {
 }
 
 export interface IParametersMerging {
+    destFile?: string;
+    rowOffset?: number;
+    byteOffset?: number;
+}
+
+export interface IParametersConcat {
     destFile?: string;
     rowOffset?: number;
     byteOffset?: number;
@@ -80,13 +97,14 @@ export interface IDLTStats {
 
 export interface IDLTStatsResults {
     stats: IDLTStats;
-    logs: IDLTLogMessage[];
+    logs: ILogMessage[];
 }
 
-export interface IDLTLogMessage {
+export interface ILogMessage {
     severity: string;
     text: string;
-    line_nr: string;
+    line_nr: number | null;
+    file_name?: string;
 }
 
 export interface IParameters {
@@ -165,7 +183,75 @@ export default class Lvin extends EventEmitter {
                             regExpStr: this._convertRegExpStrToES2018(result.regex),
                         });
                     } catch (e) {
-                        return reject(`Fail to get results of test due error: ${e.message}. Input: "${output}"`);
+                        return reject(new Error(`Fail to get results of test due error: ${e.message}. Input: "${output}"`));
+                    }
+                });
+                this._process.once('error', (processError: Error) => {
+                    this._process = undefined;
+                    reject(processError);
+                });
+            }).catch((error: Error) => {
+                reject(new Error(`[test format] Fail to generate configuration due error: ${error.message}`));
+            });
+        });
+    }
+
+    public datetimeDiscover(files: string[], options?: ILvinOptions): Promise<IDatetimeDiscoverResult[]> {
+        return new Promise((resolve, reject) => {
+            if (files.length === 0) {
+                return reject(new Error(`No files provided to discover`));
+            }
+            if (options === undefined) {
+                options = {};
+            }
+            (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(files[0]) : (options as any).cwd;
+            const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${this._getFileName()}.json`);
+            let output: string = '';
+            this._createDiscoverConfigFile(files, configFile).then(() => {
+                const args: string[] = [
+                    'discover',
+                    '-c',
+                    configFile,
+                ];
+                const started: number = Date.now();
+                console.log(`Command "lvin" is started (datetime testing):\n\tcommand: ${Lvin.path} ${args.join(' ')}`);
+                // Start process
+                this._process = spawn(Lvin.path, args, {
+                    cwd: (options as any).cwd !== undefined ? (options as any).cwd : process.cwd(),
+                });
+                this._process.stdout.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    if (typeof chunk !== 'string') {
+                        return;
+                    }
+                    output += chunk;
+                });
+                this._process.stderr.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    if (typeof chunk !== 'string') {
+                        return;
+                    }
+                    output += chunk;
+                });
+                this._process.once('close', (chunk: Buffer | string, out: any, arg: any) => {
+                    // Remove config file
+                    fs.unlinkSync(configFile);
+                    console.log(`Command "lvin" (discover) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
+                    try {
+                        let result: any = JSON.parse(output);
+                        if (!(result instanceof Array)) {
+                            result = JSON.parse(result);
+                        }
+                        if (!(result instanceof Array)) {
+                            return reject(new Error(`Unexpected format of response`));
+                        }
+                        resolve(result);
+                    } catch (e) {
+                        return reject(new Error(`Fail to get results of test due error: ${e.message}. Input: "${output}"`));
                     }
                 });
                 this._process.once('error', (processError: Error) => {
@@ -190,6 +276,7 @@ export default class Lvin extends EventEmitter {
             this._createMergeConfigFile(files, configFile).then(() => {
                 const args: string[] = [
                     'merge',
+                    '-m',
                     configFile,
                     '-s', // to post map into stdout
                 ];
@@ -199,7 +286,7 @@ export default class Lvin extends EventEmitter {
                 }
                 const started: number = Date.now();
                 let error: string = '';
-                const warnings: IDLTLogMessage[] = [];
+                const warnings: ILogMessage[] = [];
                 console.log(`Command "lvin" is started (merging): ${Lvin.path} ${args.join(' ')}.`);
                 // Start process
                 this._process = spawn(Lvin.path, args, {
@@ -227,7 +314,7 @@ export default class Lvin extends EventEmitter {
                     if (chunk instanceof Buffer) {
                         chunk = chunk.toString('utf8');
                     }
-                    const logs: IDLTLogMessage[] | undefined = this._getDLTLogsMessages(chunk);
+                    const logs: ILogMessage[] | undefined = this._getDLTLogsMessages(chunk);
                     if (logs instanceof Array) {
                         warnings.push(...logs);
                     } else {
@@ -257,6 +344,90 @@ export default class Lvin extends EventEmitter {
                 });
             }).catch((error: Error) => {
                 reject(new Error(`[merging] Fail to generate configuration due error: ${error.message}`));
+            });
+        });
+    }
+
+    public concat(files: IFileToBeCancat[], params: IParametersConcat, options?: ILvinOptions): Promise<IIndexResult> {
+        return new Promise((resolve, reject) => {
+            if (options === undefined) {
+                options = {};
+            }
+            if (typeof params.destFile === 'string') {
+                (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(params.destFile) : (options as any).cwd;
+            }
+            const configFile: string = path.resolve((options.cwd !== undefined ? options.cwd : process.cwd()), `${this._getFileName()}.json`);
+            this._createConcatConfigFile(files, configFile).then(() => {
+                const args: string[] = [
+                    'merge',
+                    '-j',
+                    configFile,
+                    '-s', // to post map into stdout
+                ];
+                if (typeof params.destFile === 'string') {
+                    (options as any).cwd = typeof (options as any).cwd !== 'string' ? path.dirname(params.destFile) : (options as any).cwd;
+                    args.push(...['-a', '-o', params.destFile]);
+                }
+                const started: number = Date.now();
+                let error: string = '';
+                const warnings: ILogMessage[] = [];
+                console.log(`Command "lvin" is started (concat): ${Lvin.path} ${args.join(' ')}.`);
+                // Start process
+                this._process = spawn(Lvin.path, args, {
+                    cwd: (options as any).cwd !== undefined ? (options as any).cwd : process.cwd(),
+                });
+                this._process.stdout.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    if (typeof chunk !== 'string') {
+                        return;
+                    }
+                    chunk = `${this._stdoutRest}${chunk}`;
+                    const rest = this._getRest(chunk);
+                    this._stdoutRest = rest.rest;
+                    chunk = rest.cleared;
+                    const mapItems: IFileMapItem[] | undefined = this._getMapSegments(rest.cleared);
+                    if (mapItems !== undefined) {
+                        this.emit(Lvin.Events.map, mapItems);
+                    } else {
+                        process.stdout.write(chunk);
+                    }
+                });
+                this._process.stderr.on('data', (chunk: Buffer | string) => {
+                    if (chunk instanceof Buffer) {
+                        chunk = chunk.toString('utf8');
+                    }
+                    const logs: ILogMessage[] | undefined = this._getDLTLogsMessages(chunk);
+                    if (logs instanceof Array) {
+                        warnings.push(...logs);
+                    } else {
+                        error += typeof chunk !== 'string' ? 'undefined error' : chunk;
+                    }                });
+                this._process.once('close', () => {
+                    // Remove config file
+                    fs.unlinkSync(configFile);
+                    // Check rest part in stdout
+                    if (this._stdoutRest.trim() !== '') {
+                        const mapItems: IFileMapItem[] | undefined = this._getMapSegments(this._stdoutRest);
+                        if (mapItems !== undefined) {
+                            this.emit(Lvin.Events.map, mapItems);
+                        }
+                    }
+                    this._stdoutRest = '';
+                    if (error.trim() !== '') {
+                        console.log(`Command "lvin" (concat) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s with next error: ${error}.`);
+                        reject(new Error(error));
+                    } else {
+                        console.log(`Command "lvin" (concat) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
+                        resolve({ size: 0, map: [], logs: warnings });
+                    }
+                });
+                this._process.once('error', (processError: Error) => {
+                    reject(processError);
+                });
+            }).catch((error: Error) => {
+                reject(new Error(`[concat] Fail to generate configuration due error: ${error.message}`));
             });
         });
     }
@@ -291,7 +462,7 @@ export default class Lvin extends EventEmitter {
             const started: number = Date.now();
             console.log(`Command "lvin" is started (indexing): ${Lvin.path} ${args.join(' ')}.`);
             let error: string = '';
-            const warnings: IDLTLogMessage[] = [];
+            const warnings: ILogMessage[] = [];
             // Start process
             this._process = spawn(Lvin.path, args, {
                 cwd: path.dirname(params.srcFile),
@@ -318,7 +489,7 @@ export default class Lvin extends EventEmitter {
                 if (chunk instanceof Buffer) {
                     chunk = chunk.toString('utf8');
                 }
-                const logs: IDLTLogMessage[] | undefined = this._getDLTLogsMessages(chunk);
+                const logs: ILogMessage[] | undefined = this._getDLTLogsMessages(chunk);
                 if (logs instanceof Array) {
                     warnings.push(...logs);
                 } else {
@@ -406,7 +577,7 @@ export default class Lvin extends EventEmitter {
                 const started: number = Date.now();
                 console.log(`Command "lvin" is started (dlt): ${Lvin.path} ${args.join(' ')}.`);
                 let error: string = '';
-                const warnings: IDLTLogMessage[] = [];
+                const warnings: ILogMessage[] = [];
                 // Start process
                 this._process = spawn(Lvin.path, args, {
                     cwd: path.dirname(params.srcFile),
@@ -433,7 +604,7 @@ export default class Lvin extends EventEmitter {
                     if (chunk instanceof Buffer) {
                         chunk = chunk.toString('utf8');
                     }
-                    const logs: IDLTLogMessage[] | undefined = this._getDLTLogsMessages(chunk);
+                    const logs: ILogMessage[] | undefined = this._getDLTLogsMessages(chunk);
                     if (logs instanceof Array) {
                         warnings.push(...logs);
                     } else {
@@ -515,7 +686,7 @@ export default class Lvin extends EventEmitter {
             console.log(`Command "lvin" is started (dlt-stats): ${Lvin.path} ${args.join(' ')}.`);
             let error: string = '';
             let output: string = '';
-            const warnings: IDLTLogMessage[] = [];
+            const warnings: ILogMessage[] = [];
             // Start process
             this._process = spawn(Lvin.path, args, {
                 cwd: path.dirname(params.srcFile),
@@ -533,7 +704,7 @@ export default class Lvin extends EventEmitter {
                 if (chunk instanceof Buffer) {
                     chunk = chunk.toString('utf8');
                 }
-                const logs: IDLTLogMessage[] | undefined = this._getDLTLogsMessages(chunk);
+                const logs: ILogMessage[] | undefined = this._getDLTLogsMessages(chunk);
                 if (logs instanceof Array) {
                     warnings.push(...logs);
                 } else {
@@ -642,9 +813,9 @@ export default class Lvin extends EventEmitter {
         return items.length > 0 ? items : undefined;
     }
 
-    private _getDLTLogsMessages(str: string): IDLTLogMessage[] | undefined {
+    private _getDLTLogsMessages(str: string): ILogMessage[] | undefined {
         try {
-            const warnings: IDLTLogMessage[] = [];
+            const warnings: ILogMessage[] = [];
             let valid: boolean = true;
             str.split(/[\n\r]/gi).forEach((msg: string) => {
                 if (msg.trim() === '') {
@@ -737,6 +908,44 @@ export default class Lvin extends EventEmitter {
         });
     }
 
+    private _createConcatConfigFile(files: IFileToBeCancat[], destFileName: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Check files
+            const missed: string[] = [];
+            files.forEach((file: IFileToBeCancat) => {
+                if (!fs.existsSync(file.file)) {
+                    missed.push(file.file);
+                }
+            });
+            if (missed.length !== 0) {
+                return reject(new Error(`Cannot file next file(s): ${missed.join('; ')}`));
+            }
+            const errors: string[] = [];
+            // Prepare config file
+            const content: string = JSON.stringify(files.map((file: IFileToBeCancat, index: number) => {
+                if (typeof file.file !== 'string' || file.file.trim() === '') {
+                    errors.push(`Record #${index}: file (filename) is missed`);
+                    return undefined;
+                }
+                if (typeof file.sourceId !== 'string' || file.sourceId.trim() === '') {
+                    errors.push(`${file.file}: sourceId is missed`);
+                    return undefined;
+                }
+                return { path: file.file, tag: file.sourceId };
+            }));
+            if (errors.length !== 0) {
+                return reject(new Error(errors.join('\n')));
+            }
+            // Write config file
+            fs.writeFile(destFileName, content, (error: NodeJS.ErrnoException | null) => {
+                if (error) {
+                    return reject(error);
+                }
+                resolve();
+            });
+        });
+    }
+
     private _createFormatConfigFile(file: IDatetimeFormatTest, destFileName: string): Promise<void> {
         return new Promise((resolve, reject) => {
             // Check file
@@ -761,6 +970,32 @@ export default class Lvin extends EventEmitter {
             };
             // Write config file
             fs.writeFile(destFileName, JSON.stringify(record), (error: NodeJS.ErrnoException | null) => {
+                if (error) {
+                    return reject(error);
+                }
+                resolve();
+            });
+        });
+    }
+
+    private _createDiscoverConfigFile(files: string[], destFileName: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Check files
+            const missed: string[] = [];
+            files.forEach((file) => {
+                if (!fs.existsSync(file)) {
+                    missed.push(file);
+                }
+            });
+            if (missed.length > 0) {
+                return reject(new Error(`Cannot find next file(s): ${missed.join(', ')}`));
+            }
+            // Prepare config file
+            const content: string = JSON.stringify(files.map((file: string) => {
+                return { path: file };
+            }));
+            // Write config file
+            fs.writeFile(destFileName, content, (error: NodeJS.ErrnoException | null) => {
                 if (error) {
                     return reject(error);
                 }
