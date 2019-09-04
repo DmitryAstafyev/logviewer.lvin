@@ -25,12 +25,18 @@ export interface IDatetimeFormatTestResult {
     readRows: number;
     regExpStr: string;
     matches: number;
+    logs?: ILogMessage[];
 }
 
-export interface IDatetimeDiscoverResult {
+export interface IDatetimeDiscoverFileResult {
     format: string;
     path: string;
     error?: string;
+}
+
+export interface IDatetimeDiscoverResult {
+    files: IDatetimeDiscoverFileResult[];
+    logs?: ILogMessage[];
 }
 
 export interface IFileToBeCancat {
@@ -147,6 +153,8 @@ export default class Lvin extends EventEmitter {
                     configFile,
                 ];
                 const started: number = Date.now();
+                let error: string = '';
+                const warnings: ILogMessage[] = [];
                 console.log(`Command "lvin" is started (datetime testing):\n\tcommand: ${Lvin.path} ${args.join(' ')}`);
                 // Start process
                 this._process = spawn(Lvin.path, args, {
@@ -165,10 +173,12 @@ export default class Lvin extends EventEmitter {
                     if (chunk instanceof Buffer) {
                         chunk = chunk.toString('utf8');
                     }
-                    if (typeof chunk !== 'string') {
-                        return;
+                    const logs: ILogMessage[] | undefined = this._getDLTLogsMessages(chunk);
+                    if (logs instanceof Array) {
+                        warnings.push(...logs);
+                    } else {
+                        error += typeof chunk !== 'string' ? 'undefined error' : chunk;
                     }
-                    output += chunk;
                 });
                 this._process.once('close', (chunk: Buffer | string, out: any, arg: any) => {
                     // Remove config file
@@ -176,12 +186,18 @@ export default class Lvin extends EventEmitter {
                     console.log(`Command "lvin" (datetime testing) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s.`);
                     try {
                         const result: any = JSON.parse(output);
-                        resolve({
-                            matches: result.matching_lines,
-                            readRows: result.matching_lines + result.nonmatching_lines,
-                            readBytes: result.processed_bytes,
-                            regExpStr: this._convertRegExpStrToES2018(result.regex),
-                        });
+                        if (error.trim() !== '') {
+                            console.log(`Command "lvin" (discover) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s with next error: ${error}.`);
+                            reject(new Error(error));
+                        } else {
+                            resolve({
+                                matches: result.matching_lines,
+                                readRows: result.matching_lines + result.nonmatching_lines,
+                                readBytes: result.processed_bytes,
+                                regExpStr: this._convertRegExpStrToES2018(result.regex),
+                                logs: warnings,
+                            });
+                        }
                     } catch (e) {
                         return reject(new Error(`Fail to get results of test due error: ${e.message}. Input: "${output}"`));
                     }
@@ -196,7 +212,7 @@ export default class Lvin extends EventEmitter {
         });
     }
 
-    public datetimeDiscover(files: string[], options?: ILvinOptions): Promise<IDatetimeDiscoverResult[]> {
+    public datetimeDiscover(files: string[], options?: ILvinOptions): Promise<IDatetimeDiscoverResult> {
         return new Promise((resolve, reject) => {
             if (files.length === 0) {
                 return reject(new Error(`No files provided to discover`));
@@ -214,6 +230,8 @@ export default class Lvin extends EventEmitter {
                     configFile,
                 ];
                 const started: number = Date.now();
+                let error: string = '';
+                const warnings: ILogMessage[] = [];
                 console.log(`Command "lvin" is started (datetime testing):\n\tcommand: ${Lvin.path} ${args.join(' ')}`);
                 // Start process
                 this._process = spawn(Lvin.path, args, {
@@ -232,10 +250,12 @@ export default class Lvin extends EventEmitter {
                     if (chunk instanceof Buffer) {
                         chunk = chunk.toString('utf8');
                     }
-                    if (typeof chunk !== 'string') {
-                        return;
+                    const logs: ILogMessage[] | undefined = this._getDLTLogsMessages(chunk);
+                    if (logs instanceof Array) {
+                        warnings.push(...logs);
+                    } else {
+                        error += typeof chunk !== 'string' ? 'undefined error' : chunk;
                     }
-                    output += chunk;
                 });
                 this._process.once('close', (chunk: Buffer | string, out: any, arg: any) => {
                     // Remove config file
@@ -249,7 +269,15 @@ export default class Lvin extends EventEmitter {
                         if (!(result instanceof Array)) {
                             return reject(new Error(`Unexpected format of response`));
                         }
-                        resolve(result);
+                        if (error.trim() !== '') {
+                            console.log(`Command "lvin" (discover) is finished in ${((Date.now() - started) / 1000).toFixed(2)}s with next error: ${error}.`);
+                            reject(new Error(error));
+                        } else {
+                            resolve({
+                                files: result,
+                                logs: warnings,
+                            });
+                        }
                     } catch (e) {
                         return reject(new Error(`Fail to get results of test due error: ${e.message}. Input: "${output}"`));
                     }
@@ -403,7 +431,8 @@ export default class Lvin extends EventEmitter {
                         warnings.push(...logs);
                     } else {
                         error += typeof chunk !== 'string' ? 'undefined error' : chunk;
-                    }                });
+                    }
+                });
                 this._process.once('close', () => {
                     // Remove config file
                     fs.unlinkSync(configFile);

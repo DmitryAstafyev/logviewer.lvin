@@ -2,17 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getAsset } from './downloader';
 import { unpack, chmod } from './unpacker';
+import { getEnvVar } from 'logviewer.shell.env';
 
 const Settings: {
     bin: string,
     user: string,
     repo: string,
     version: string,
+    vars: string[],
 } = {
     bin: path.join(__dirname, '../bin'),
     user: 'marcmo',
-    repo: 'logviewer_indexer',
-    version: '0.32.1',
+    repo: 'chipmunk.indexer',
+    version: '0.33.0',
+    vars: ['GITHUB_TOKEN', 'CUSTOM_REPO_TOKEN'],
 };
 
 const OriginalFileName: {
@@ -103,6 +106,79 @@ function success(file: string) {
     console.log(`Sources successfuly downloaded and unpacked: ${file}.`);
 }
 
+function download(src: string, token: string) {
+    return new Promise((resolve, reject) => {
+        getAsset({
+            token: token,
+            user: Settings.user,
+            repo: Settings.repo,
+        }, {
+            name: src,
+            version: Settings.version,
+            dest: Settings.bin,
+        }).then((tgzfile: string) => {
+            // Unpack sources
+            unpack(tgzfile).then((dest: string) => {
+                // Remove packet
+                fs.unlinkSync(tgzfile);
+                // Confirm file
+                const expected: string = path.resolve(Settings.bin, getExpectedOriFileName());
+                if (!fs.existsSync(expected)) {
+                    return reject(new Error(`Expecting file "${expected}", but file isn't found`));
+                }
+                const cropped: string = path.resolve(Settings.bin, getExpectedTarFileName());
+                // Rename
+                fs.renameSync(expected, cropped);
+                // Correct params
+                chmod(cropped);
+                // Done
+                resolve(src);
+            }).catch((unpackError: Error) => {
+                reject(new Error(`Fail to unpack binary source due error: ${unpackError.message}`));
+            });
+        }).catch((downloadError: Error) => {
+            reject(new Error(`Fail to download binary source due error: ${downloadError.message}`));
+        });
+    });
+}
+
+function getToken(): Promise<string> {
+    return new Promise((resolve) => {
+        let token: string | undefined;
+        Settings.vars.forEach((name: string) => {
+            if (typeof (process.env as any)[name] !== 'string') {
+                return;
+            }
+            if ((process.env as any)[name].trim() === '') {
+                return;
+            }
+            token = (process.env as any)[name];
+            console.log(`Env variable "${name}" has string value.`);
+        });
+        if (typeof token === 'string' && token.trim() !== '') {
+            return resolve(token);
+        }
+        Promise.all(Settings.vars.map((name: string) => {
+            return new Promise((resolveName) => {
+                getEnvVar(name).then((extracted: string) => {
+                    if (extracted.trim() !== '') {
+                        token = extracted;
+                        console.log(`Env variable "${name}" has string value.`);
+                    }
+                    resolveName();
+                }).catch((error: Error) => {
+                    console.warn(`Fail to get ${name} due error: ${error.message}`);
+                    resolveName();
+                });
+            });
+        })).then(() => {
+            resolve(typeof token !== 'string' ? '' : token);
+        }).catch((error: Error) => {
+            console.warn(`Error while getting vars: ${error.message}`);
+            resolve('');
+        });
+    });
+}
 export function postInstall() {
     // Check platform
     if ((OriginalFileName as any)[process.platform] === undefined) {
@@ -120,36 +196,19 @@ export function postInstall() {
     fs.mkdirSync(Settings.bin);
     // Downloading binary
     const sourceFile: string = getAssetName(Settings.version);
-    getAsset({
-        token: (process.env as any).GITHUB_TOKEN,
-        user: Settings.user,
-        repo: Settings.repo,
-    }, {
-        name: sourceFile,
-        version: Settings.version,
-        dest: Settings.bin,
-    }).then((tgzfile: string) => {
-        // Unpack sources
-        unpack(tgzfile).then((dest: string) => {
-            // Remove packet
-            fs.unlinkSync(tgzfile);
-            // Confirm file
-            const expected: string = path.resolve(Settings.bin, getExpectedOriFileName());
-            if (!fs.existsSync(expected)) {
-                return fail(`Expecting file "${expected}", but file isn't found`);
-            }
-            const cropped: string = path.resolve(Settings.bin, getExpectedTarFileName());
-            // Rename
-            fs.renameSync(expected, cropped);
-            // Correct params
-            chmod(cropped);
-            // Done
+
+    // Try to get token
+    getToken().then((extracted: string) => {
+        if (extracted !== '') {
+            console.log(`Found github token, it will be used to access to github API`);
+        } else {
+            console.log(`Cannot find github token, will procced without it`);
+        }
+        download(sourceFile, extracted).then(() => {
             success(sourceFile);
-        }).catch((unpackError: Error) => {
-            fail(`Fail to unpack binary source due error: ${unpackError.message}`);
+        }).catch((error: Error) => {
+            fail(error.message);
         });
-    }).catch((downloadError: Error) => {
-        fail(`Fail to download binary source due error: ${downloadError.message}`);
     });
 }
 

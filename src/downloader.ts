@@ -23,7 +23,7 @@ export function getAsset(git: IGitHubOptions, asset: IAssetOptions): Promise<str
             github = new GitHub({
                 user: git.user,
                 repo: git.repo,
-                token: git.token,
+                token: git.token === '' ? null : git.token,
             });
         } catch (e) {
             return reject(e);
